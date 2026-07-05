@@ -697,10 +697,16 @@ Regras de cada campo:
       if (ct.includes("application/json")) {
         const data = await res.json();
         if (res.ok) return data;
-        throw new Error(data.error || "Erro no servidor.");
+        // Backend existe e respondeu com erro real → mostrar o erro, não mascarar com o fallback
+        const err = new Error(data.error || "Erro no servidor.");
+        err.backendReal = true;
+        throw err;
       }
       // resposta não-JSON = backend inexistente (ambiente de teste) → cai no fallback
-    } catch (e) { /* segue para o fallback */ }
+    } catch (e) {
+      if (e && e.backendReal) throw e;
+      /* segue para o fallback */
+    }
 
     // 2) Fallback: chamada direta (funciona no ambiente de teste dentro do Claude)
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -780,8 +786,8 @@ Regras de cada campo:
       if (data.hipotese) setHipotese(data.hipotese);
       if (data.pergunta) setPergunta(data.pergunta);
       salvarNoHistorico(final, origem, histNota);
-    } catch {
-      setErro("Não consegui analisar agora. Verifica sua conexão e tenta de novo.");
+    } catch (e) {
+      setErro(e && e.backendReal && e.message ? e.message : "Não consegui analisar agora. Verifica sua conexão e tenta de novo.");
     } finally { setLoading(false); }
   }
 
