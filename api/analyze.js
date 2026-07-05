@@ -63,24 +63,30 @@ Regras de cada campo:
 - "hipotese": OPCIONAL (string vazia se não houver base no relato). No máximo UMA hipótese sobre um sentimento adjacente que a pessoa talvez ainda não tenha percebido — SOMENTE se o relato der indícios dele e SOMENTE sobre algo que NÃO está em "emotions" (nunca sugira checar um sentimento que o resultado já mostra como presente). Linguagem obrigatoriamente convidativa e verificável pela pessoa: "vale checar se...", "algumas pessoas nessa situação também notam...". NUNCA afirme o que a pessoa sente ("você também sente X" é proibido). Objetivo: ampliar a consciência, não diagnosticar. Ex. (num relato de luto): "vale checar se, junto da saudade, aparece também um alívio — ele costuma vir com culpa, mas é uma reação comum depois de longos períodos de cuidado."
 - "pergunta": 1 pergunta socrática gentil (máx. 20 palavras), com UMA única demanda (nunca duas perguntas em uma, nunca "o que você gostaria + o que depende de você"). Calibre pelo estado da pessoa: carga alta → pergunta exploratória ou de autocompaixão ("o que você diria a um amigo que sentisse isso?"); energia disponível → pergunta suave de agência. Nunca soe como "e aí, o que você vai fazer?".`;
 
+  // Tenta o melhor modelo gratuito primeiro; se indisponível na conta, cai para o seguinte.
+  const MODELOS = ["gemini-3-flash", "gemini-2.5-flash"];
   try {
-    const r = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { response_mime_type: "application/json" },
-        }),
-      }
-    );
-    if (!r.ok) {
-      const errText = await r.text();
-      res.status(502).json({ error: `Erro na API do Gemini: ${errText}` });
+    let data = null;
+    let ultimoErro = "";
+    for (const modelo of MODELOS) {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { response_mime_type: "application/json" },
+          }),
+        }
+      );
+      if (r.ok) { data = await r.json(); break; }
+      ultimoErro = `${modelo}: ${(await r.text()).slice(0, 300)}`;
+    }
+    if (!data) {
+      res.status(502).json({ error: `Erro na API do Gemini — ${ultimoErro}` });
       return;
     }
-    const data = await r.json();
     const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
     const parsed = JSON.parse(raw);
     res.status(200).json({
