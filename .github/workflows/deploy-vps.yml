@@ -1,0 +1,38 @@
+# Publica Identificador de Emoções na VPS sozinho a cada merge em main. Sem túnel, sem EasyPanel, sem o PC do Glen.
+# O job empacota o código e manda por SSH para o usuário "deploy" da VPS. A chave é presa a comandos fixos (construir a imagem
+# e trocar o serviço: sobe a nova antes de derrubar a velha; se a nova não ficar saudável, o Swarm volta sozinho para a
+# anterior). Guia: docs/DEPLOY_AUTOMATICO_VPS.md no repositório gleiconintp/painel-bagy.
+name: Deploy na VPS (Identificador de Emoções)
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  workflow_dispatch:
+concurrency:
+  group: deploy-vps-identificador
+  cancel-in-progress: false
+permissions:
+  contents: read
+env:
+  VPS_HOST: 187.41.108.185
+  # Impressão digital PÚBLICA da VPS (não é segredo): protege contra desvio para outro servidor.
+  VPS_HOST_KEY: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKMS0S7tQ3GaUu2IxoAHhJCn1Py8qZMCPYBEfCoLTg4B"
+  SSH_OPTS: "-i /home/runner/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes -o ServerAliveInterval=30"
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preparar acesso
+        env:
+          VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+        run: |
+          [ -n "$VPS_DEPLOY_KEY" ] || { echo "::error::Falta o segredo VPS_DEPLOY_KEY neste repositório (docs/DEPLOY_AUTOMATICO_VPS.md no painel-bagy)"; exit 1; }
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VPS_DEPLOY_KEY" > ~/.ssh/deploy_key; chmod 600 ~/.ssh/deploy_key
+          printf '%s %s\n' "$VPS_HOST" "$VPS_HOST_KEY" > ~/.ssh/known_hosts
+      - name: Construir e publicar na VPS
+        run: tar --exclude=.git --exclude=node_modules --exclude=.next -czf - . | ssh $SSH_OPTS deploy@$VPS_HOST "deploy identificador $GITHUB_SHA"
